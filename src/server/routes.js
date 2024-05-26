@@ -2,9 +2,10 @@ const Joi = require("joi");
 const bcrypt = require("bcrypt");
 const Jwt = require("@hapi/jwt");
 const firebase = require("./firebase");
-const { v4: uuidv4 } = require("uuid");
-const formidable = require("formidable");
 const fs = require("fs");
+const fetch = require("node-fetch");
+const formidable = require("formidable");
+
 
 const authService = {
 	signupHandler: async (request, h) => {
@@ -118,7 +119,6 @@ const authService = {
 			// Analisis audio
 			const analysisResult = await analyzeAudio(audioFile.filepath);
 
-			
 			// Simpan hasil analisis ke subcollection di bawah dokumen pengguna
 			const userRef = firebase.firestore().collection("users").doc(userId);
 			const analysisRef = userRef.collection("analysisResults").doc();
@@ -190,16 +190,18 @@ module.exports = [
 		options: { auth: "jwt" },
 		handler: async (request, h) => {
 			const userId = request.params.userId;
-	
+
 			try {
 				const userRef = firebase.firestore().collection("users").doc(userId);
-				const analysisResultsSnapshot = await userRef.collection("analysisResults").get();
-	
+				const analysisResultsSnapshot = await userRef
+					.collection("analysisResults")
+					.get();
+
 				const history = [];
-				analysisResultsSnapshot.forEach((doc) => {
+				analysisResultsSnapshot.forEach(doc => {
 					history.push({ id: doc.id, ...doc.data() });
 				});
-	
+
 				return h.response(history).code(200);
 			} catch (error) {
 				console.error("Error fetching analysis history:", error);
