@@ -109,20 +109,28 @@ async function analyzeAudio(audioFilePath) {
 
 function generateSuggestions(isDepressed) {
 	if (isDepressed) {
-		return [
+		const depressedResponses = [
 			"Hasil analisis menunjukkan potensi depresi. Kami sangat menyarankan Anda untuk mencari bantuan profesional dari terapis atau psikolog.",
 			"Berbicaralah dengan orang yang Anda percaya, seperti keluarga atau teman, dan berbagi perasaan Anda.",
 			"Cobalah untuk menjaga rutinitas sehat, termasuk tidur yang cukup, makan makanan yang seimbang, dan berolahraga secara teratur.",
 			"Cari sumber daya online yang dapat membantu, seperti aplikasi meditasi, kelompok dukungan online, atau platform yang menawarkan terapi online.",
 			"Jangan ragu untuk mencari pertolongan segera jika Anda merasa sulit mengatasi perasaan Anda atau memiliki pikiran untuk menyakiti diri sendiri.",
 		];
+		const randomResponse =
+			depressedResponses[Math.floor(Math.random() * depressedResponses.length)];
+		return randomResponse;
 	} else {
-		return [
+		const notDepressedResponses = [
 			"Hasil analisis menunjukkan bahwa Anda mungkin tidak mengalami depresi. Namun, penting untuk memantau kesehatan mental Anda secara keseluruhan.",
 			"Perhatikan pola tidur, pola makan, dan tingkat aktivitas Anda. Jika Anda merasa ada perubahan yang signifikan, konsultasikan dengan profesional kesehatan.",
 			"Cari kegiatan yang membuat Anda bahagia dan rileks, seperti menghabiskan waktu dengan anggota keluarga, melakukan aktivitas yang menyenangkan, atau bermain game.",
 			"Konsiderasikan untuk mengunjungi dokter atau perawat untuk mendiskusikan keluhan Anda jika Anda merasa sulit mengendalikan perasaan.",
 		];
+		const randomResponse =
+			notDepressedResponses[
+				Math.floor(Math.random() * notDepressedResponses.length)
+			];
+		return randomResponse;
 	}
 }
 
