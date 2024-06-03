@@ -1,5 +1,5 @@
 # Use an official Node.js runtime as a parent image
-FROM node:14-slim
+FROM node:latest
 
 # Set the working directory to /app
 WORKDIR /app
@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 8080
 
 # Define the command to run your app
-CMD [ "node", "src/server/server.js" ]
+CMD [ "node", "start" ]
