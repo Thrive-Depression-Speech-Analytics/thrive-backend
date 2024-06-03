@@ -13,8 +13,9 @@ RUN npm i
 # Copy the rest of the application to the working directory
 COPY . .
 
-# Expose port 8080 for incoming requests
-EXPOSE 5000
+ENV PORT 8080
+ENV HOST 0.0.0.0
+EXPOSE 8080
 
 # Define the command to run your app
 CMD [ "npm", "run", "start" ]
