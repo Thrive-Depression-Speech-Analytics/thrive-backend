@@ -16,13 +16,7 @@ const routes = [
 		options: { auth: false },
 		handler: authService.loginHandler,
 	},
-	{
-		method: "POST",
-		path: "/logout",
-		options: { auth: true },
-		handler: authService.logoutHandler,
-	},
-
+	
 	{
 		method: "POST",
 		path: "/forgot-password",
