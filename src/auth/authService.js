@@ -161,6 +161,29 @@ const authService = {
 	},
 
 	/**
+	 * Penanganan logout pengguna.
+	 * @param {Object} request - Objek permintaan.
+	 * @param {Object} h - Objek respons.
+	 * @returns {Promise<Object>} - Objek respons dengan pesan bahwa logout berhasil.
+	*/
+	logoutHandler: async (request, h) => {
+		try {
+			const token = request.headers.authorization;
+			if (!token) {
+				return h.response({ message: "Token tidak ditemukan" }).code(401);
+			}
+
+			// Invalidate token JWT
+			await Jwt.token.invalidate(token);
+
+			return h.response({ message: "Logout berhasil" }).code(200);
+		} catch (error) {
+			console.error("Kesalahan logout:", error);
+			return h.response({ message: "Kesalahan server internal" }).code(500);
+		}
+	},
+
+	/**
 	 * Penanganan lupa password.
 	 * @param {Object} request - Objek permintaan.
 	 * @param {Object} h - Objek respons.
