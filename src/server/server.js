@@ -7,8 +7,8 @@ require("dotenv").config();
 
 const init = async () => {
 	const server = Hapi.server({
-		port: process.env.PORT || 8080,
-		host: "0.0.0.0",
+		port: process.env.PORT || 3000,
+		host: process.env.HOST || "0.0.0.0" || "localhost",
 		routes: {
 			cors: true,
 			validate: {
@@ -61,8 +61,6 @@ const init = async () => {
 	await server.start();
 	console.log("Server running on %s", server.info.uri);
 };
-
-init();
 
 process.on("unhandledRejection", err => {
 	console.log(err);
