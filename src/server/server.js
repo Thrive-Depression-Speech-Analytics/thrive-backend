@@ -1,7 +1,8 @@
 const Hapi = require("@hapi/hapi");
 const Jwt = require("@hapi/jwt");
 const authRoutes = require("./routes");
-const firebase = require("./firebase");
+const authService = require("../auth/authService");
+const admin = require("./firebase");
 
 require("dotenv").config();
 
@@ -36,18 +37,17 @@ const init = async () => {
 		},
 		validate: async (artifacts, request, h) => {
 			try {
-				const { username } = artifacts.decoded.payload;
+				const { userId } = artifacts.decoded.payload;
 
-				const userRef = firebase.firestore().collection("users").doc(username);
-				const userDoc = await userRef.get();
+				const user = await admin.auth().getUser(userId);
 
-				if (!userDoc.exists) {
+				if (!user) {
 					return { isValid: false };
 				}
 
 				return {
 					isValid: true,
-					credentials: { username },
+					credentials: { userId },
 				};
 			} catch (error) {
 				return { isValid: false };
@@ -55,6 +55,9 @@ const init = async () => {
 		},
 	});
 	server.auth.default("jwt");
+
+	// Use authService to generate JWT tokens
+	server.method("generateToken", authService.generateToken, {});
 
 	server.route(authRoutes);
 

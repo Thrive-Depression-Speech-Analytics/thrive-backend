@@ -1,16 +1,12 @@
-// src/config/firebase.js
+const admin = require("firebase-admin");
 
-const firebase = require("firebase-admin");
-require("dotenv").config();
+const serviceAccount = require("./thrive-dev-424108-firebase-adminsdk-ko2m8-63ad7a2eec.json");
 
-const serviceAccount = {
-	projectId: process.env.FIREBASE_PROJECT_ID,
-	clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-	privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-};
-
-firebase.initializeApp({
-	credential: firebase.credential.cert(serviceAccount),
+const app = admin.initializeApp({
+	credential: admin.credential.cert(serviceAccount),
 });
 
-module.exports = firebase;
+const auth = admin.auth(app);
+const db = admin.firestore(app);
+
+module.exports = { auth, db };

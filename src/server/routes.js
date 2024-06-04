@@ -7,26 +7,38 @@ const routes = [
 		method: "POST",
 		path: "/register",
 		options: { auth: false },
-		handler: authService.signupHandler,
+		handler: async (request, h) => {
+			const { email, password } = request.payload;
+			return authService.createUser(email, password);
+		},
 	},
 
 	{
 		method: "POST",
 		path: "/login",
 		options: { auth: false },
-		handler: authService.loginHandler,
+		handler: async (request, h) => {
+			const { email, password } = request.payload;
+			return authService.signInWithEmailAndPassword(email, password);
+		},
 	},
 	{
 		method: "POST",
 		path: "/forgot-password",
 		options: { auth: false },
-		handler: authService.forgotPasswordHandler,
+		handler: async (request, h) => {
+			const { email } = request.payload;
+			return authService.forgotPassword(email);
+		},
 	},
 	{
 		method: "POST",
 		path: "/reset-password",
 		options: { auth: false },
-		handler: authService.resetPasswordHandler,
+		handler: async (request, h) => {
+			const { email, otp, newPassword } = request.payload;
+			return authService.resetPassword(email, otp, newPassword);
+		},
 	},
 
 	{

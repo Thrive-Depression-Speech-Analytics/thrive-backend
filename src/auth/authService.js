@@ -1,218 +1,88 @@
-const Joi = require("joi");
-const bcrypt = require("bcrypt");
-const Jwt = require("@hapi/jwt");
-const firebase = require("../server/firebase");
-const otpGenerator = require("otp-generator");
-const nodemailer = require("nodemailer");
+// auth.js
 
-/**
- * Layanan autentikasi.
- * @namespace
- */
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const { auth } = require("../server/firebase");
+const nodemailer = require("nodemailer"); // Add this line
+
+require("dotenv").config();
 
 const authService = {
-	/**
-	 * Mencari pengguna berdasarkan email.
-	 * @param {string} email - Email pengguna yang dicari.
-	 * @returns {Promise<Object|null>} - Dokumen pengguna yang ditemukan atau null jika tidak ditemukan.
-	 */
-
-	findUserByEmail: async email => {
-		const usersCollection = firebase.firestore().collection("users");
-		const querySnapshot = await usersCollection
-			.where("email", "==", email)
-			.get();
-		return querySnapshot.docs.length > 0 ? querySnapshot.docs[0] : null;
-	},
-
-	/**
-	 * Memverifikasi OTP.
-	 * @param {string} otp - OTP yang akan diverifikasi.
-	 * @param {Object} userDoc - Dokumen pengguna.
-	 * @returns {boolean} - true jika OTP valid dan belum kadaluarsa, false jika tidak valid atau sudah kadaluarsa.
-	 */
-	verifyOtp: (otp, userDoc) => {
-		// Periksa apakah OTP valid dan belum kadaluarsa
-		const currentTime = new Date().getTime();
-		return (
-			otp === userDoc.data().otp && currentTime < userDoc.data().otpExpiresAt
-		);
-	},
-
-	/**
-	 * Penanganan pendaftaran pengguna.
-	 * @param {Object} request - Objek permintaan.
-	 * @param {Object} h - Objek respons.
-	 * @returns {Promise<Object>} - Objek respons dengan pesan dan ID pengguna.
-	 */
-	signupHandler: async (request, h) => {
+	// When a user creates an account
+	async createUser(email, password) {
 		try {
-			const { username, password, email } = request.payload;
-
-			// Validasi input menggunakan Joi
-			const schema = Joi.object({
-				username: Joi.string().alphanum().min(3).max(30).required().messages({
-					"string.alphanum": "Username hanya boleh mengandung huruf dan angka",
-					"string.min": "Username minimal harus memiliki 3 karakter",
-					"string.max": "Username maksimal harus memiliki 30 karakter",
-					"any.required": "Username harus diisi",
-				}),
-				password: Joi.string().min(8).required().messages({
-					"string.min": "Password minimal harus memiliki 8 karakter",
-					"any.required": "Password harus diisi",
-				}),
-				email: Joi.string().email().required().messages({
-					"string.email": "Email harus memiliki format yang valid",
-					"any.required": "Email harus diisi",
-				}),
-			});
-
-			const { error } = schema.validate(request.payload);
-			if (error) {
-				return h.response({ message: error.details[0].message }).code(400);
-			}
-
-			// Periksa apakah email sudah ada
-			const emailRef = firebase
-				.firestore()
-				.collection("users")
-				.where("email", "==", email);
-			const emailDocs = await emailRef.get();
-			if (!emailDocs.empty) {
-				return h.response({ message: "Email sudah ada" }).code(409);
-			}
-
-			// Hash password menggunakan bcrypt
 			const hashedPassword = await bcrypt.hash(password, 10);
-
-			// Simpan pengguna di Firestore (gunakan ID dokumen Firestore yang dihasilkan secara otomatis)
-			const userRef = firebase.firestore().collection("users").doc();
-			await userRef.set({
-				username,
-				password: hashedPassword,
-				email,
-				createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-			});
-
-			return h
-				.response({ message: "Pendaftaran berhasil", userId: userRef.id })
-				.code(201);
+			const user = await auth.createUser({ email, password: hashedPassword });
+			await auth.setCustomUserClaims(user.uid, { hashedPassword });
+			return { userId: user.uid };
 		} catch (error) {
-			console.error("Kesalahan pendaftaran:", error);
-			return h.response({ message: "Kesalahan server internal" }).code(500);
+			console.error(error);
+			return { error: "Failed to create user" };
 		}
 	},
 
-	/**
-	 * Penanganan login pengguna.
-	 * @param {Object} request - Objek permintaan.
-	 * @param {Object} h - Objek respons.
-	 * @returns {Promise<Object>} - Objek respons dengan pesan dan token JWT.
-	 */
-	loginHandler: async (request, h) => {
+	// When a user logs in
+	async signInWithEmailAndPassword(email, password) {
 		try {
-			const { email, password } = request.payload;
-
-			// Validasi input menggunakan Joi
-			const schema = Joi.object({
-				email: Joi.string().email().required().messages({
-					"string.email": "Email harus memiliki format yang valid",
-					"any.required": "Email harus diisi",
-				}),
-				password: Joi.string().required().messages({
-					"any.required": "Password harus diisi",
-				}),
-			});
-
-			const { error, value } = schema.validate(request.payload);
-			if (error) {
-				return h.response({ message: error.details[0].message }).code(400);
+			const user = await auth.getUserByEmail(email);
+			if (!user) {
+				return { error: "User not found" };
 			}
-
-			// Ambil pengguna dari Firestore berdasarkan email
-			const userRef = firebase
-				.firestore()
-				.collection("users")
-				.where("email", "==", email);
-			const userDocs = await userRef.get();
-			if (userDocs.empty) {
-				return h.response({ message: "Kredensial tidak valid" }).code(401);
+			const hashedPassword = user.customClaims.hashedPassword;
+			if (!hashedPassword) {
+				return { error: "Password not found" };
 			}
-
-			// Bandingkan hash password menggunakan bcrypt
-			const storedPassword = userDocs.docs[0].data().password;
-			const passwordMatch = await bcrypt.compare(password, storedPassword);
-			if (!passwordMatch) {
-				return h.response({ message: "Kredensial tidak valid" }).code(401);
+			const isValidPassword = await bcrypt.compare(password, hashedPassword);
+			if (!isValidPassword) {
+				return { error: "Invalid password" };
 			}
-
-			// Generate JWT (pastikan process.env.JWT_SECRET sudah diatur)
-			const token = Jwt.token.generate(
-				{ userId: userDocs.docs[0].id }, // Sertakan userId dalam payload
-				{ key: process.env.JWT_SECRET, algorithm: "HS256" },
-				{ ttlSec: 14400 } // 4 jam
-			);
-
-			return h.response({ message: "Login berhasil", token }).code(200);
+			// Login successful, return a token or other authentication credentials
+			const token = await authService.generateToken(user.uid);
+			return { token };
 		} catch (error) {
-			console.error("Kesalahan login:", error);
-			return h.response({ message: "Kesalahan server internal" }).code(500);
+			console.error(error);
+			return { error: "Failed to sign in" };
 		}
 	},
 
-	/**
-	 * Penanganan lupa password.
-	 * @param {Object} request - Objek permintaan.
-	 * @param {Object} h - Objek respons.
-	 * @returns {Promise<Object>} - Objek respons dengan pesan bahwa OTP berhasil dikirim.
-	 */
-	forgotPasswordHandler: async (request, h) => {
+	async getHashedPasswordFromDatabase(userId) {
 		try {
-			const { email } = request.payload;
-
-			// Validasi input menggunakan Joi
-			const schema = Joi.object({
-				email: Joi.string().email().required().messages({
-					"string.email": "Email harus memiliki format yang valid",
-					"any.required": "Email harus diisi",
-				}),
-			});
-			const { error } = schema.validate(request.payload);
-			if (error) {
-				return h.response({ message: error.details[0].message }).code(400);
+			const user = await auth.getUser(userId);
+			if (!user) {
+				throw new Error("User not found");
 			}
+			return user.customClaims.hashedPassword;
+		} catch (error) {
+			throw new Error("User not found");
+		}
+	},
 
-			// Periksa apakah pengguna ada
-			const userDoc = await authService.findUserByEmail(email);
-			if (!userDoc) {
-				return h.response({ message: "Email tidak ditemukan" }).code(404);
+	async forgotPassword(email) {
+		try {
+			const user = await auth.getUserByEmail(email);
+			if (!user) {
+				return { error: "User not found" };
 			}
-
-			// Generate OTP
-			const otp = otpGenerator.generate(6, {
-				digits: true,
-				lowerCaseAlphabets: false,
-				upperCaseAlphabets: false,
-				specialChars: false,
-			});
-
-			// Simpan OTP ke dokumen pengguna
-			await userDoc.ref.update({
+			const otp = Math.floor(100000 + Math.random() * 900000);
+			await auth.setCustomUserClaims(user.uid, {
 				otp,
-				otpExpiresAt: new Date().getTime() + 300000, // 5 menit
+				otpExpiresAt: Date.now() + 300000,
 			});
 
-			// Kirim OTP melalui email
+			console.log(process.env)
+			// Send OTP to user's email using Nodemailer
 			const transporter = nodemailer.createTransport({
-				service: "gmail", // Gunakan layanan email pilihan Anda
+				host: "smtp.gmail.com",
+				port: 587,
+				secure: false, // or 'STARTTLS'
 				auth: {
-					user: "12220290@bsi.ac.id", // Ganti dengan alamat email Anda
-					pass: "Kidut255!", // Ganti dengan kata sandi email Anda
+					user: process.env.EMAIL_USER, // Ganti dengan alamat email Anda
+					pass: process.env.EMAIL_PASS, // Ganti dengan kata sandi email Anda
 				},
 			});
 
 			const mailOptions = {
-				from: "12220290@bsi.ac.id", // Ganti dengan alamat email Anda
+				from: process.env.EMAIL_USER, // Ganti dengan alamat email Anda
 				to: email,
 				subject: "Kode OTP Anda",
 				text: `Kode OTP Anda adalah: ${otp}`,
@@ -220,70 +90,66 @@ const authService = {
 
 			await transporter.sendMail(mailOptions);
 
-			return h.response({ message: "OTP berhasil dikirim" }).code(200);
+			return { message: "OTP sent to your email" };
 		} catch (error) {
-			console.error("Kesalahan lupa password:", error);
-			return h.response({ message: "Kesalahan server internal" }).code(500);
+			return { error: error.message };
 		}
 	},
 
-	/**
-	 * Penanganan reset password.
-	 * @param {Object} request - Objek permintaan.
-	 * @param {Object} h - Objek respons.
-	 * @returns {Promise<Object>} - Objek respons dengan pesan bahwa password berhasil diubah.
-	 */
-	resetPasswordHandler: async (request, h) => {
-		const { email, otp, newPassword } = request.payload;
-
-		// Dapatkan dokumen pengguna dari Firestore
-		const userSnapshot = await firebase
-			.firestore()
-			.collection("users")
-			.where("email", "==", email)
-			.get();
-
-		// Jika pengguna tidak ada, kembalikan respons error
-		if (userSnapshot.empty) {
-			return h.response({ message: "Pengguna tidak ditemukan" }).code(404);
-		}
-
-		// Get the first document from the snapshot
-		const userDoc = userSnapshot.docs[0];
-
-		// Periksa apakah OTP sudah kadaluarsa
-		const currentTime = new Date().getTime();
-		const otpExpiresAt = userDoc.data().otpExpiresAt;
-
-		if (!otpExpiresAt || currentTime > otpExpiresAt) {
-			return h.response({ message: "OTP telah kadaluarsa" }).code(400);
-		}
-
-		// Verifikasi OTP
-		const isOtpValid = await authService.verifyOtp(otp, userDoc);
-
-		// Jika OTP tidak valid, kembalikan respons error
-		if (!isOtpValid) {
-			return h.response({ message: "OTP tidak valid" }).code(400);
-		}
-
-		// Jika OTP valid, perbarui password dan hapus OTP
+	async resetPassword(email, otp, newPassword) {
 		try {
-			const salt = await bcrypt.genSalt(10);
-			const hashedPassword = await bcrypt.hash(newPassword, salt);
+			const user = await auth.getUserByEmail(email);
+			if (!user) {
+				throw new Error("User not found");
+			}
 
-			// Perbarui dokumen pengguna di Firestore dengan password baru dan hapus OTP
-			await userDoc.ref.update({
-				password: hashedPassword,
+			const { customClaims } = await auth.getUser(user.uid);
+			console.log("Custom claims:", customClaims);
+
+			if (!customClaims.otp) {
+				throw new Error("OTP not found in custom claims");
+			}
+
+			if (customClaims.otp !== otp) {
+				throw new Error("Invalid OTP");
+			}
+
+			if (customClaims.otpExpiresAt < Date.now()) {
+				throw new Error("OTP has expired");
+			}
+
+			const credential = firebase.auth.EmailAuthProvider.credential(
+				email,
+				newPassword
+			);
+			await user.reauthenticateWithCredential(credential);
+			await user.updatePassword(newPassword);
+			await auth.setCustomUserClaims(user.uid, {
 				otp: null,
 				otpExpiresAt: null,
 			});
 
-			return h.response({ message: "Password berhasil diubah" }).code(200);
+			return { message: "Password reset successfully" };
 		} catch (error) {
-			console.error("Kesalahan reset password:", error);
-			return h.response({ message: "Kesalahan server internal" }).code(500);
+			console.error("Error resetting password:", error);
+			return { error: error.message };
 		}
+	},
+
+	async verifyPassword(userId, password) {
+		const hashedPassword = await authService.getHashedPasswordFromDatabase(
+			userId
+		);
+		const isValid = await bcrypt.compare(password, hashedPassword);
+		return isValid;
+	},
+
+	async generateToken(userId) {
+		const secretKey = "WADUBFUQUHR!(@*U!)";
+		console.log(`Generating token for user ${userId}`);
+		const token = jwt.sign({ userId }, secretKey, { expiresIn: "1h" });
+		console.log(`Token generated: ${token}`);
+		return token;
 	},
 };
 
