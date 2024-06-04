@@ -161,29 +161,6 @@ const authService = {
 	},
 
 	/**
-	 * Penanganan logout pengguna.
-	 * @param {Object} request - Objek permintaan.
-	 * @param {Object} h - Objek respons.
-	 * @returns {Promise<Object>} - Objek respons dengan pesan bahwa logout berhasil.
-	*/
-	logoutHandler: async (request, h) => {
-		try {
-			const token = request.headers.authorization;
-			if (!token) {
-				return h.response({ message: "Token tidak ditemukan" }).code(401);
-			}
-
-			// Invalidate token JWT
-			await Jwt.token.invalidate(token);
-
-			return h.response({ message: "Logout berhasil" }).code(200);
-		} catch (error) {
-			console.error("Kesalahan logout:", error);
-			return h.response({ message: "Kesalahan server internal" }).code(500);
-		}
-	},
-
-	/**
 	 * Penanganan lupa password.
 	 * @param {Object} request - Objek permintaan.
 	 * @param {Object} h - Objek respons.
@@ -214,8 +191,8 @@ const authService = {
 			// Generate OTP
 			const otp = otpGenerator.generate(6, {
 				digits: true,
-				alphabets: false,
-				upperCase: false,
+				lowerCaseAlphabets: false,
+				upperCaseAlphabets: false,
 				specialChars: false,
 			});
 
@@ -229,13 +206,13 @@ const authService = {
 			const transporter = nodemailer.createTransport({
 				service: "gmail", // Gunakan layanan email pilihan Anda
 				auth: {
-					user: "emailAnda@gmail.com", // Ganti dengan alamat email Anda
-					pass: "passwordAnda", // Ganti dengan kata sandi email Anda
+					user: "12220290@bsi.ac.id", // Ganti dengan alamat email Anda
+					pass: "Kidut255!", // Ganti dengan kata sandi email Anda
 				},
 			});
 
 			const mailOptions = {
-				from: "emailAnda@gmail.com", // Ganti dengan alamat email Anda
+				from: "12220290@bsi.ac.id", // Ganti dengan alamat email Anda
 				to: email,
 				subject: "Kode OTP Anda",
 				text: `Kode OTP Anda adalah: ${otp}`,
@@ -260,16 +237,19 @@ const authService = {
 		const { email, otp, newPassword } = request.payload;
 
 		// Dapatkan dokumen pengguna dari Firestore
-		const userDoc = await firebase
+		const userSnapshot = await firebase
 			.firestore()
 			.collection("users")
-			.doc(email)
+			.where("email", "==", email)
 			.get();
 
 		// Jika pengguna tidak ada, kembalikan respons error
-		if (!userDoc.exists) {
+		if (userSnapshot.empty) {
 			return h.response({ message: "Pengguna tidak ditemukan" }).code(404);
 		}
+
+		// Get the first document from the snapshot
+		const userDoc = userSnapshot.docs[0];
 
 		// Periksa apakah OTP sudah kadaluarsa
 		const currentTime = new Date().getTime();
