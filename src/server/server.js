@@ -36,18 +36,19 @@ const init = async () => {
 		},
 		validate: async (artifacts, request, h) => {
 			try {
-				const { username } = artifacts.decoded.payload;
+				const { userId } = artifacts.decoded.payload; // Extract userId
 
-				const userRef = firebase.firestore().collection("users").doc(username);
+				const userRef = firebase.firestore().collection("users").doc(userId); // Use userId
 				const userDoc = await userRef.get();
 
 				if (!userDoc.exists) {
 					return { isValid: false };
 				}
 
+				// It's usually recommended to attach the userId to credentials
 				return {
 					isValid: true,
-					credentials: { username },
+					credentials: { userId },
 				};
 			} catch (error) {
 				return { isValid: false };
