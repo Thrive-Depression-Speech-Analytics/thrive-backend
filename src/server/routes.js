@@ -4,7 +4,7 @@ const { fetchUserHistory } = require("../services/historyUser");
 const audioControllers = require("../services/audioHandler");
 
 // --- Input Validation Schemas ---
-// (You can add more validation rules as needed)
+
 
 const signupSchema = Joi.object({
 	username: Joi.string().alphanum().min(3).max(30).required(),
@@ -131,7 +131,7 @@ const routes = [
 				allow: "multipart/form-data",
 				maxBytes: 10 * 1024 * 1024,
 			},
-			// You might add validation for audio file types here
+			
 		},
 		handler: audioControllers.analyzeHandler,
 	},
