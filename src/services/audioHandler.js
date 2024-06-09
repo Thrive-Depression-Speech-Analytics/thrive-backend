@@ -2,6 +2,16 @@ const fs = require("fs");
 const fetch = require("node-fetch");
 const formidable = require("formidable");
 const firebase = require("../server/firebase");
+const { Storage } = require("@google-cloud/storage");
+const axios = require("axios");
+
+const storage = new Storage();
+const bucketName = "your-bucket-name";
+
+const cachedSuggestions = {
+	depressed: [],
+	notDepressed: [],
+};
 
 const audioControllers = {
 	analyzeHandler: async (request, h) => {
@@ -15,8 +25,8 @@ const audioControllers = {
 			}
 
 			if (!isAllowedAudioFormat(audioFile.mimetype)) {
-				fs.unlinkSync(audioFile.filepath); // Hapus file jika format tidak didukung
-				throw new Error("Unsupported audio format");
+				await deleteAudioFile(audioFile.filepath);
+				throw new Error("Format audio yang diupload tidak didukung.");
 			}
 
 			const isDepressed = await analyzeAudio(audioFile.filepath);
@@ -28,30 +38,31 @@ const audioControllers = {
 				timestamp: firebase.firestore.FieldValue.serverTimestamp(),
 				depressionStatus,
 				suggestions: generateSuggestions(isDepressed),
-				audioFileName: audioFile.originalFilename, // Opsional
+				audioFileName: audioFile.originalFilename,
 			});
 
 			return h
 				.response({
-					message: "Analysis complete",
+					message: "Analisis selesai!",
 					isDepressed,
 					suggestions: generateSuggestions(isDepressed),
 					analysisId: analysisRef.id,
 				})
 				.code(200);
 		} catch (error) {
-			console.error("Analysis error:", error);
+			console.error("Kesalahan analisis:", error);
 
-			// Hapus file audio jika terjadi error
 			if (audioFile && audioFile.filepath) {
 				try {
-					fs.unlinkSync(audioFile.filepath);
+					await deleteAudioFile(audioFile.filepath);
 				} catch (unlinkError) {
 					console.error("Gagal menghapus file audio:", unlinkError);
 				}
 			}
 
-			return h.response({ message: "Internal server error" }).code(500);
+			return h
+				.response({ message: "Ada kesalahan internal. Coba lagi nanti." })
+				.code(500);
 		}
 	},
 };
@@ -62,14 +73,22 @@ async function processAudioUpload(request) {
 		const form = formidable({ multiples: false });
 		form.parse(request.payload, async (err, fields, files) => {
 			if (err) {
-				reject(new Error("Error processing audio upload"));
+				reject(new Error("Gagal mengunggah audio. Coba lagi nanti."));
 			}
 			if (!files.file) {
-				reject(new Error("No audio file uploaded"));
+				reject(new Error("Tidak ada file audio yang diunggah."));
 			}
 			resolve(files.file);
 		});
 	});
+}
+
+async function deleteAudioFile(filePath) {
+	try {
+		fs.unlinkSync(filePath);
+	} catch (error) {
+		console.error("Error deleting audio file:", error);
+	}
 }
 
 function isAllowedAudioFormat(mimetype) {
@@ -84,7 +103,7 @@ async function analyzeAudio(audioFilePath) {
 		const response = await fetch("https://your-ml-model-api-endpoint", {
 			method: "POST",
 			body: audioData,
-			headers: { "Content-Type": "audio/wav" }, // Sesuaikan dengan format audio Anda
+			headers: { "Content-Type": "audio/wav" },
 		});
 
 		if (!response.ok) {
@@ -99,44 +118,53 @@ async function analyzeAudio(audioFilePath) {
 		} else if (analysisResult == 0) {
 			isDepressed = false;
 		} else {
-			throw new Error("Invalid analysis result");
+			throw new Error("Hasil analisis tidak valid.");
 		}
+
+		await deleteAudioFile(audioFilePath);
+
+		return isDepressed;
 	} catch (error) {
 		console.error("Kesalahan menganalisis audio:", error);
-		throw error; // Melempar error agar ditangani oleh blok catch di tingkat atas
+		throw error;
 	}
 }
 
-function generateSuggestions(isDepressed) {
+async function generateSuggestions(isDepressed) {
+	let suggestions = [];
 	if (isDepressed) {
-		const depressedResponses = [
-			"Hasil analisis menunjukkan potensi depresi. Kami sangat menyarankan Anda untuk mencari bantuan profesional dari terapis atau psikolog.",
-			"Berbicaralah dengan orang yang Anda percaya, seperti keluarga atau teman, dan berbagi perasaan Anda.",
-			"Cobalah untuk menjaga rutinitas sehat, termasuk tidur yang cukup, makan makanan yang seimbang, dan berolahraga secara teratur.",
-			"Cari sumber daya online yang dapat membantu, seperti aplikasi meditasi, kelompok dukungan online, atau platform yang menawarkan terapi online.",
-			"Jangan ragu untuk mencari pertolongan segera jika Anda merasa sulit mengatasi perasaan Anda atau memiliki pikiran untuk menyakiti diri sendiri.",
-		];
-		const randomResponse =
-			depressedResponses[Math.floor(Math.random() * depressedResponses.length)];
-		return randomResponse;
-	} else {
-		const notDepressedResponses = [
-			"Hasil analisis menunjukkan bahwa Anda mungkin tidak mengalami depresi. Namun, penting untuk memantau kesehatan mental Anda secara keseluruhan.",
-			"Perhatikan pola tidur, pola makan, dan tingkat aktivitas Anda. Jika Anda merasa ada perubahan yang signifikan, konsultasikan dengan profesional kesehatan.",
-			"Cari kegiatan yang membuat Anda bahagia dan rileks, seperti menghabiskan waktu dengan anggota keluarga, melakukan aktivitas yang menyenangkan, atau bermain game.",
-			"Konsiderasikan untuk mengunjungi dokter atau perawat untuk mendiskusikan keluhan Anda jika Anda merasa sulit mengendalikan perasaan.",
-		];
-		const randomResponse =
-			notDepressedResponses[
-				Math.floor(Math.random() * notDepressedResponses.length)
+		if (cachedSuggestions.depressed.length === 0) {
+			cachedSuggestions.depressed = [
+				"Yuk, kamu luangkan waktu buat hal-hal yang bikin kamu bahagia. Nonton film bareng orang yang sayang sama kamu, main game, atau ngobrol bareng temen, gimana?",
+				"Olahraga dan makan sehat bisa bikin mood kamu lebih baik. Jangan lupa istirahat yang cukup juga, ya.",
+				"Ada banyak aplikasi meditasi dan terapi online yang bisa bantu kamu. Coba cari yang cocok buat kamu. Aku bisa bantu cari video yang bisa kamu ikuti.",
+				"Kalo kamu merasa gak kuat ngatasin perasaanmu, jangan ragu untuk cari bantuan profesional dari psikolog atau terapis.",
+				"Gabung komunitas online atau grup support untuk depresi. Sharing pengalaman bisa bikin kamu merasa lebih tenang.",
+				"Coba bikin daftar hal-hal yang kamu suka, dan mulai lakukan! Ngejar hobi bisa bikin kamu lebih bahagia.",
+				"Kalo kamu lagi minum obat, jangan lupa ikuti petunjuk dokter dan jangan berhenti minum obat tanpa konsultasi dulu.",
+				"Coba latihan relaksasi seperti pernapasan dalam atau meditasi untuk mengurangi stres.",
 			];
-		return randomResponse;
+		}
+		suggestions = cachedSuggestions.depressed;
+	} else {
+		if (cachedSuggestions.notDepressed.length === 0) {
+			cachedSuggestions.notDepressed = [
+				"Senang banget dengar kamu sehat-sehat aja! Tetap jaga kesehatan mentalmu ya. Perhatikan pola tidur, makan, dan aktivitasmu.",
+				"Kalo ada perubahan yang signifikan, jangan ragu untuk konsultasi sama dokter atau perawat.",
+				"Yuk, kita luangkan waktu untuk ngejar hobi atau kegiatan yang bikin kamu senang. Biar mood kamu selalu ceria.",
+				"Habiskan waktu bareng orang-orang yang sayang sama kamu. Jaga hubungan sosial yang sehat. Aku yakin kamu punya banyak temen yang sayang sama kamu.",
+				"Hindari alkohol dan narkoba. Itu bisa bikin kondisi mental kamu makin buruk. Hampirilah orang yang kamu sayang kalau kamu butuh ngobrol atau curhat.",
+				"Luangkan waktu untuk menikmati alam terbuka. Sinar matahari bisa bikin suasana hati lebih baik. Kita bisa jalan-jalan bareng ke taman, gimana?",
+				"Kalo kamu merasa cemas atau stres, coba teknik manajemen stres seperti yoga atau meditasi.",
+			];
+		}
+		suggestions = cachedSuggestions.notDepressed;
 	}
 }
 
 function labelDepressionStatus(isDepressed) {
 	if (isDepressed) {
-		return "Mungkin anda sedang depresi";
+		return "Terindikasi Depresi";
 	} else {
 		return "Normal";
 	}
