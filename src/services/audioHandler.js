@@ -158,8 +158,8 @@ const analyzeAudio = async (audioFilePath, fileName) => {
       throw new Error("Hasil analisis tidak valid.");
     }
 
-    // Delete audio from GCS after analysis
-    await deleteAudioFromGCS(fileName);
+    // **No need to delete the audio from GCS** 
+    // await deleteAudioFromGCS(fileName);
 
     return isDepressed;
   } catch (error) {
@@ -255,7 +255,8 @@ const audioControllers = {
 
       if (audioFile && audioFile.filepath) {
         await deleteAudioFile(audioFile.filepath);
-        await deleteAudioFromGCS(audioFile.originalFilename);
+        // **No need to delete the audio from GCS** 
+        // await deleteAudioFromGCS(audioFile.originalFilename);
       }
 
       return h
