@@ -5,14 +5,10 @@ const firebase = require("../server/firebase");
 const otpGenerator = require("otp-generator");
 const nodemailer = require("nodemailer");
 
-/**
- * Layanan autentikasi.
- * @namespace
- */
-
 const authService = {
 	/**
-	 * Mencari pengguna berdasarkan email.
+	 * @function findUserByEmail
+	 * @description Mencari pengguna berdasarkan email.
 	 * @param {string} email - Email pengguna yang dicari.
 	 * @returns {Promise<Object|null>} - Dokumen pengguna yang ditemukan atau null jika tidak ditemukan.
 	 */
@@ -26,7 +22,8 @@ const authService = {
 	},
 
 	/**
-	 * Memverifikasi OTP.
+	 * @function verifyOtp
+	 * @description Memverifikasi OTP.
 	 * @param {string} otp - OTP yang akan diverifikasi.
 	 * @param {Object} userDoc - Dokumen pengguna.
 	 * @returns {boolean} - true jika OTP valid dan belum kadaluarsa, false jika tidak valid atau sudah kadaluarsa.
@@ -40,52 +37,46 @@ const authService = {
 	},
 
 	/**
-	 * Penanganan pendaftaran pengguna.
-	 * @param {Object} request - Objek permintaan.
-	 * @param {Object} h - Objek respons.
-	 * @returns {Promise<Object>} - Objek respons dengan pesan dan ID pengguna.
+	 * @function signupHandler
+	 * @description Handler untuk mendaftarkan pengguna baru.
+	 * @param {Object} request - Objek request.
+	 * @param {Object} h - Toolkit respons.
+	 * @returns {Promise<Object>} - Objek respons dengan pesan yang menunjukkan bahwa pendaftaran berhasil.
 	 */
 	signupHandler: async (request, h) => {
 		try {
 			const { username, password, email } = request.payload;
 
-			// Validasi input menggunakan Joi
+			if (!username || !password || !email) {
+				return h
+					.response({ message: "Username, password, and email are required" })
+					.code(400);
+			}
+
 			const schema = Joi.object({
-				username: Joi.string().alphanum().min(3).max(30).required().messages({
-					"string.alphanum": "Username hanya boleh mengandung huruf dan angka",
-					"string.min": "Username minimal harus memiliki 3 karakter",
-					"string.max": "Username maksimal harus memiliki 30 karakter",
-					"any.required": "Username harus diisi",
-				}),
-				password: Joi.string().min(8).required().messages({
-					"string.min": "Password minimal harus memiliki 8 karakter",
-					"any.required": "Password harus diisi",
-				}),
-				email: Joi.string().email().required().messages({
-					"string.email": "Email harus memiliki format yang valid",
-					"any.required": "Email harus diisi",
-				}),
+				username: Joi.string().alphanum().min(3).max(30).required(),
+				password: Joi.string().min(8).required(),
+				email: Joi.string().email().required(),
 			});
 
 			const { error } = schema.validate(request.payload);
+
 			if (error) {
 				return h.response({ message: error.details[0].message }).code(400);
 			}
 
-			// Periksa apakah email sudah ada
 			const emailRef = firebase
 				.firestore()
 				.collection("users")
 				.where("email", "==", email);
 			const emailDocs = await emailRef.get();
+
 			if (!emailDocs.empty) {
-				return h.response({ message: "Email sudah ada" }).code(409);
+				return h.response({ message: "Email already exists" }).code(409);
 			}
 
-			// Hash password menggunakan bcrypt
 			const hashedPassword = await bcrypt.hash(password, 10);
 
-			// Simpan pengguna di Firestore (gunakan ID dokumen Firestore yang dihasilkan secara otomatis)
 			const userRef = firebase.firestore().collection("users").doc();
 			await userRef.set({
 				username,
@@ -95,195 +86,273 @@ const authService = {
 			});
 
 			return h
-				.response({ message: "Pendaftaran berhasil", userId: userRef.id })
+				.response({ message: "Signup successful", userId: userRef.id })
 				.code(201);
 		} catch (error) {
-			console.error("Kesalahan pendaftaran:", error);
-			return h.response({ message: "Kesalahan server internal" }).code(500);
+			console.error("Error signing up:", error);
+			return h.response({ message: "Internal server error" }).code(500);
 		}
 	},
 
 	/**
-	 * Penanganan login pengguna.
-	 * @param {Object} request - Objek permintaan.
-	 * @param {Object} h - Objek respons.
-	 * @returns {Promise<Object>} - Objek respons dengan pesan dan token JWT.
+	 * @function loginHandler
+	 * @description Handler untuk masuk sebagai pengguna.
+	 * @param {Object} request - Objek request.
+	 * @param {Object} h - Toolkit respons.
+	 * @returns {Promise<Object>} - Objek respons dengan pesan yang menunjukkan bahwa masuk berhasil.
 	 */
 	loginHandler: async (request, h) => {
 		try {
 			const { email, password } = request.payload;
 
-			// Validasi input menggunakan Joi
-			const schema = Joi.object({
-				email: Joi.string().email().required().messages({
-					"string.email": "Email harus memiliki format yang valid",
-					"any.required": "Email harus diisi",
-				}),
-				password: Joi.string().required().messages({
-					"any.required": "Password harus diisi",
-				}),
-			});
-
-			const { error, value } = schema.validate(request.payload);
-			if (error) {
-				return h.response({ message: error.details[0].message }).code(400);
+			if (!email || !password) {
+				return h
+					.response({ message: "Email and password are required" })
+					.code(400);
 			}
 
-			// Ambil pengguna dari Firestore berdasarkan email
-			const userRef = firebase
+			const userSnapshot = await firebase
 				.firestore()
 				.collection("users")
-				.where("email", "==", email);
-			const userDocs = await userRef.get();
-			if (userDocs.empty) {
-				return h.response({ message: "Kredensial tidak valid" }).code(401);
+				.where("email", "==", email)
+				.get();
+
+			if (userSnapshot.empty) {
+				return h.response({ message: "Email not found" }).code(404);
 			}
 
-			// Bandingkan hash password menggunakan bcrypt
-			const storedPassword = userDocs.docs[0].data().password;
-			const passwordMatch = await bcrypt.compare(password, storedPassword);
-			if (!passwordMatch) {
-				return h.response({ message: "Kredensial tidak valid" }).code(401);
+			const userDoc = userSnapshot.docs[0];
+			const storedPassword = userDoc.data().password;
+
+			const isMatch = await bcrypt.compare(password, storedPassword);
+
+			if (!isMatch) {
+				return h.response({ message: "Invalid password" }).code(401);
 			}
 
-			// Generate JWT (pastikan process.env.JWT_SECRET sudah diatur)
 			const token = Jwt.token.generate(
-				{ userId: userDocs.docs[0].id }, // Sertakan userId dalam payload
+				{ userId: userDoc.id }, // Include userId in token payload
 				{ key: process.env.JWT_SECRET, algorithm: "HS256" },
-				{ ttlSec: 14400 } // 4 jam
+				{ ttlSec: 14400 }
 			);
 
-			return h.response({ message: "Login berhasil", token }).code(200);
+			return h.response({ message: "Login successful", token }).code(200);
 		} catch (error) {
-			console.error("Kesalahan login:", error);
-			return h.response({ message: "Kesalahan server internal" }).code(500);
+			console.error("Error logging in:", error);
+			return h.response({ message: "Internal server error" }).code(500);
 		}
 	},
 
 	/**
-	 * Penanganan lupa password.
-	 * @param {Object} request - Objek permintaan.
-	 * @param {Object} h - Objek respons.
-	 * @returns {Promise<Object>} - Objek respons dengan pesan bahwa OTP berhasil dikirim.
+	 * @function forgotPasswordHandler
+	 * @description Handler untuk lupa kata sandi.
+	 * @param {Object} request - Objek request.
+	 * @param {Object} h - Toolkit respons.
+	 * @returns {Promise<Object>} - Objek respons dengan pesan yang menunjukkan bahwa OTP berhasil dikirim.
 	 */
 	forgotPasswordHandler: async (request, h) => {
 		try {
 			const { email } = request.payload;
 
-			// Validasi input menggunakan Joi
-			const schema = Joi.object({
-				email: Joi.string().email().required().messages({
-					"string.email": "Email harus memiliki format yang valid",
-					"any.required": "Email harus diisi",
-				}),
-			});
-			const { error } = schema.validate(request.payload);
-			if (error) {
-				return h.response({ message: error.details[0].message }).code(400);
+			if (!email) {
+				return h.response({ message: "Email is required" }).code(400);
 			}
 
-			// Periksa apakah pengguna ada
 			const userDoc = await authService.findUserByEmail(email);
+
 			if (!userDoc) {
-				return h.response({ message: "Email tidak ditemukan" }).code(404);
+				return h.response({ message: "Email not found" }).code(404);
 			}
 
-			// Generate OTP
-			const otp = otpGenerator.generate(6, {
+			const otp = otpGenerator.generate(4, {
 				digits: true,
 				lowerCaseAlphabets: false,
 				upperCaseAlphabets: false,
 				specialChars: false,
 			});
 
-			// Simpan OTP ke dokumen pengguna
 			await userDoc.ref.update({
 				otp,
-				otpExpiresAt: new Date().getTime() + 300000, // 5 menit
+				otpExpiresAt: new Date().getTime() + 300000, // 5 minutes
 			});
 
-			// Kirim OTP melalui email
 			const transporter = nodemailer.createTransport({
-				service: "gmail", // Gunakan layanan email pilihan Anda
+				service: "gmail",
 				auth: {
-					user: "12220290@bsi.ac.id", // Ganti dengan alamat email Anda
-					pass: "Kidut255!", // Ganti dengan kata sandi email Anda
+					user: "email-anda", // ganti dengan email yang support smtp
+					pass: "password-email", // password email
 				},
 			});
 
 			const mailOptions = {
-				from: "12220290@bsi.ac.id", // Ganti dengan alamat email Anda
+				from: "email-anda", // ganti dengan email yang support smtp
 				to: email,
-				subject: "Kode OTP Anda",
-				text: `Kode OTP Anda adalah: ${otp}`,
+				subject: "Your OTP for password reset",
+				text: `Your OTP is: ${otp}`,
 			};
 
 			await transporter.sendMail(mailOptions);
 
-			return h.response({ message: "OTP berhasil dikirim" }).code(200);
+			return h.response({ message: "OTP sent successfully" }).code(200);
 		} catch (error) {
-			console.error("Kesalahan lupa password:", error);
-			return h.response({ message: "Kesalahan server internal" }).code(500);
+			console.error("Error sending OTP:", error);
+			return h.response({ message: "Internal server error" }).code(500);
 		}
 	},
 
 	/**
-	 * Penanganan reset password.
-	 * @param {Object} request - Objek permintaan.
-	 * @param {Object} h - Objek respons.
-	 * @returns {Promise<Object>} - Objek respons dengan pesan bahwa password berhasil diubah.
+	 * @function resetPasswordHandler
+	 * @description Handler untuk mereset kata sandi pengguna.
+	 * @param {Object} request - Objek request.
+	 * @param {Object} h - Toolkit respons.
+	 * @returns {Promise<Object>} - Objek respons dengan pesan yang menunjukkan bahwa kata sandi berhasil direset.
 	 */
 	resetPasswordHandler: async (request, h) => {
-		const { email, otp, newPassword } = request.payload;
-
-		// Dapatkan dokumen pengguna dari Firestore
-		const userSnapshot = await firebase
-			.firestore()
-			.collection("users")
-			.where("email", "==", email)
-			.get();
-
-		// Jika pengguna tidak ada, kembalikan respons error
-		if (userSnapshot.empty) {
-			return h.response({ message: "Pengguna tidak ditemukan" }).code(404);
-		}
-
-		// Get the first document from the snapshot
-		const userDoc = userSnapshot.docs[0];
-
-		// Periksa apakah OTP sudah kadaluarsa
-		const currentTime = new Date().getTime();
-		const otpExpiresAt = userDoc.data().otpExpiresAt;
-
-		if (!otpExpiresAt || currentTime > otpExpiresAt) {
-			return h.response({ message: "OTP telah kadaluarsa" }).code(400);
-		}
-
-		// Verifikasi OTP
-		const isOtpValid = await authService.verifyOtp(otp, userDoc);
-
-		// Jika OTP tidak valid, kembalikan respons error
-		if (!isOtpValid) {
-			return h.response({ message: "OTP tidak valid" }).code(400);
-		}
-
-		// Jika OTP valid, perbarui password dan hapus OTP
 		try {
+			const { email, otp, newPassword } = request.payload;
+
+			if (!email || !otp || !newPassword) {
+				return h
+					.response({ message: "Email, OTP, and new password are required" })
+					.code(400);
+			}
+
+			const userSnapshot = await firebase
+				.firestore()
+				.collection("users")
+				.where("email", "==", email)
+				.get();
+
+			if (userSnapshot.empty) {
+				return h.response({ message: "User not found" }).code(404);
+			}
+
+			const userDoc = userSnapshot.docs[0];
+
+			const currentTime = new Date().getTime();
+			const otpExpiresAt = userDoc.data().otpExpiresAt;
+
+			if (!otpExpiresAt || currentTime > otpExpiresAt) {
+				return h.response({ message: "OTP has expired" }).code(400);
+			}
+
+			const isOtpValid = await authService.verifyOtp(otp, userDoc);
+
+			if (!isOtpValid) {
+				return h.response({ message: "Invalid OTP" }).code(400);
+			}
+
 			const salt = await bcrypt.genSalt(10);
 			const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-			// Perbarui dokumen pengguna di Firestore dengan password baru dan hapus OTP
 			await userDoc.ref.update({
 				password: hashedPassword,
 				otp: null,
 				otpExpiresAt: null,
 			});
 
-			return h.response({ message: "Password berhasil diubah" }).code(200);
+			return h.response({ message: "Password successfully reset" }).code(200);
 		} catch (error) {
-			console.error("Kesalahan reset password:", error);
-			return h.response({ message: "Kesalahan server internal" }).code(500);
+			console.error("Error resetting password:", error);
+			return h.response({ message: "Internal server error" }).code(500);
 		}
+	},
+
+	/**
+	 * @function editUsernameHandler
+	 * @description Handler untuk mengubah username pengguna.
+	 * @param {Object} request - Objek request.
+	 * @param {Object} h - Toolkit respons.
+	 * @returns {Promise<Object>} - Objek respons dengan pesan yang menunjukkan bahwa username berhasil diubah.
+	 */
+	editUsernameHandler: async (request, h) => {
+		try {
+			const { userId } = request.params;
+			const { newUsername } = request.payload;
+
+			if (!userId || !newUsername) {
+				return h
+					.response({ message: "User ID and new username are required" })
+					.code(400);
+			}
+
+			const userDoc = await firebase
+				.firestore()
+				.collection("users")
+				.doc(userId)
+				.get();
+
+			if (!userDoc.exists) {
+				return h.response({ message: "User not found" }).code(404);
+			}
+
+			await userDoc.ref.update({ username: newUsername });
+
+			return h.response({ message: "Username successfully changed" }).code(200);
+		} catch (error) {
+			console.error("Error editing username:", error);
+			return h.response({ message: "Internal server error" }).code(500);
+		}
+	},
+
+	/**
+	 * @function changePasswordHandler
+	 * @description Handler untuk mengubah kata sandi pengguna.
+	 * @param {Object} request - Objek request.
+	 * @param {Object} h - Toolkit respons.
+	 * @returns {Promise<Object>} - Objek respons dengan pesan yang menunjukkan bahwa kata sandi berhasil diubah.
+	 */
+	changePasswordHandler: async (request, h) => {
+		try {
+			const { userId } = request.params;
+			const { oldPassword, newPassword } = request.payload;
+
+			if (!userId || !oldPassword || !newPassword) {
+				return h
+					.response({
+						message: "User ID, old password, and new password are required",
+					})
+					.code(400);
+			}
+
+			const userDoc = await firebase
+				.firestore()
+				.collection("users")
+				.doc(userId)
+				.get();
+
+			if (!userDoc.exists) {
+				return h.response({ message: "User not found" }).code(404);
+			}
+
+			const storedPassword = userDoc.data().password;
+
+			const isMatch = await bcrypt.compare(oldPassword, storedPassword);
+
+			if (!isMatch) {
+				return h.response({ message: "Invalid old password" }).code(401);
+			}
+
+			const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+			await userDoc.ref.update({ password: hashedNewPassword });
+
+			return h.response({ message: "Password successfully changed" }).code(200);
+		} catch (error) {
+			console.error("Error changing password:", error);
+			return h.response({ message: "Internal server error" }).code(500);
+		}
+	},
+
+	/**
+	 * @function logoutHandler
+	 * @description Handler untuk keluar dari aplikasi.
+	 * @param {Object} request - Objek request.
+	 * @param {Object} h - Toolkit respons.
+	 * @returns {Promise<Object>} - Objek respons dengan pesan yang menunjukkan bahwa keluar berhasil.
+	 */
+	logoutHandler: async (request, h) => {
+		return h.response({ message: "Logged out successfully" }).code(200);
 	},
 };
 

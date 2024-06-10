@@ -7,10 +7,14 @@ require("dotenv").config();
 
 const init = async () => {
 	const server = Hapi.server({
-		port: process.env.PORT || 3000,
-		host: process.env.HOST || "localhost",
+		port: process.env.PORT || 8080, // Use the port Cloud Run provides
+		host: "0.0.0.0", // Listen on all interfaces in Cloud Run
 		routes: {
-			cors: true,
+			cors: {
+				origin: ["*"], //  Permissive for now, restrict in production
+				headers: ["Authorization", "Content-Type"],
+				credentials: true,
+			},
 			validate: {
 				failAction: async (request, h, err) => {
 					if (err) {
@@ -36,18 +40,19 @@ const init = async () => {
 		},
 		validate: async (artifacts, request, h) => {
 			try {
-				const { username } = artifacts.decoded.payload;
+				const { userId } = artifacts.decoded.payload; // Extract userId
 
-				const userRef = firebase.firestore().collection("users").doc(username);
+				const userRef = firebase.firestore().collection("users").doc(userId); // Use userId
 				const userDoc = await userRef.get();
 
 				if (!userDoc.exists) {
 					return { isValid: false };
 				}
 
+				// It's usually recommended to attach the userId to credentials
 				return {
 					isValid: true,
-					credentials: { username },
+					credentials: { userId },
 				};
 			} catch (error) {
 				return { isValid: false };
