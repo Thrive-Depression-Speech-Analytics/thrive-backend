@@ -1,78 +1,97 @@
-# prediction_service.py
 import os
 import io
+import librosa
 import numpy as np
 import tensorflow as tf
 from flask import Flask, request, jsonify, abort
-from google.cloud import storage
+import json
 
 app = Flask(__name__)
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "thrive-dev-424108-154d2ee7527b.json"
+# Menentukan path dan parameter-parameter
+target_sr = 22050
+segment_duration = 180  # Durasi segmen audio dalam detik (3 menit)
+skip_duration = 30  # Durasi lompatan dari awal file audio (30 detik)
+desired_length = 15504
 
-# Google Cloud Storage Configuration
-BUCKET_NAME = "thrive-audio-storage"  # Replace with your bucket name
-gcs_client = storage.Client()
-bucket = gcs_client.bucket(BUCKET_NAME)
-
-
-# Load the TFLite model
-model_path = "thrive_model.tflite"  # Update with your model's path
+# Memuat model TFLite
+model_path = "thrive_model.tflite"
 interpreter = tf.lite.Interpreter(model_path=model_path)
 interpreter.allocate_tensors()
 
-# Get input and output tensors
+# Mendapatkan detail tensor input dan output
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-# Configuration (adjust as needed)
-target_sr = 22050
-segment_duration = 3 * 60
-skip_duration = 5
-threshold = 1
+# Fungsi untuk mengekstrak fitur MFCC dari audio
+def extract_mfcc_features(audio, sr, n_mfcc=13, desired_length=15504):
+    mfccs = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=n_mfcc)
+    current_length = mfccs.shape[1]
+    if current_length < desired_length:
+        mfccs = np.pad(
+            mfccs, ((0, 0), (0, desired_length - current_length)), mode='constant')
+    elif current_length > desired_length:
+        mfccs = mfccs[:, :desired_length]
+    return mfccs
 
+# Fungsi untuk memproses segmen audio
+def preprocess_audio_segments(audio_data, sample_rate):
+    audio = librosa.load(io.BytesIO(audio_data), sr=target_sr,
+                         duration=segment_duration, offset=skip_duration)[0]
+    return audio
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    """Handles audio depression prediction requests (no custom preprocessing)."""
+    """Menangani permintaan prediksi depresi audio."""
     if 'audio' not in request.files:
-        abort(400, description="No audio file provided.")
+        return jsonify({'error': 'Tidak ada file audio yang disediakan'}), 400
 
     audio_file = request.files['audio']
     if audio_file.filename == '':
-        abort(400, description="No selected file.")
+        return jsonify({'error': 'Tidak ada file audio yang dipilih'}), 400
 
     try:
-        # 1. Read audio data into memory
+        # 1. Membaca data audio ke dalam memori
         audio_data = audio_file.read()
 
-        # 2. Convert bytes to NumPy array (assuming your model expects this)
-        # Make sure the data type and shape match your model's input requirements!
-        audio_np = np.frombuffer(audio_data, dtype=np.float32)
-        audio_np = audio_np.reshape(
-            input_details[0]['shape'])  # Very important!
+        # 2. Memproses audio dan mengekstrak fitur
+        audio = preprocess_audio_segments(audio_data, target_sr)
+        mfccs = extract_mfcc_features(
+            audio, target_sr, desired_length=desired_length)
 
-        # 3. Make the prediction
-        interpreter.set_tensor(input_details[0]['index'], audio_np)
+        # 3. Menetapkan tensor input (menggunakan bentuk input dinamis)
+        input_shape = input_details[0]['shape']
+        mfccs = mfccs.reshape(input_shape)
+        interpreter.set_tensor(
+            input_details[0]['index'], mfccs.astype(np.float32))
+
+        # 4. Menjalankan inferensi
         interpreter.invoke()
-        prediction = interpreter.get_tensor(output_details[0]['index'])[0][0]
 
-        # 5. Interpret the prediction (same as before)
-        result = "depresi" if prediction >= threshold else "normal"
-        confidence = prediction if result == "depresi" else 1 - prediction
+        # 5. Mendapatkan output
+        prediction = interpreter.get_tensor(output_details[0]['index'])[0]
 
-        # 6. Construct the response
-        response = {
+        # 6. Interpretasi dan Penyiapan Hasil
+        threshold = 0.5  # Sesuaikan ambang batas sesuai kebutuhan
+
+        # Memastikan prediksi berada dalam rentang probabilitas yang valid
+        prediction_value = max(0, min(1, prediction))
+
+        # Memeriksa apakah prediksi menunjukkan depresi (kelas 1)
+        result = "depresi" if prediction_value >= threshold else "normal"
+
+        # Mengubah tipe NumPy dan memastikan semua nilai dapat diserialisasi JSON
+        response_data = {
             'result': result,
-            'confidence': confidence,
-            'gcs_audio_uri': f"gs://{BUCKET_NAME}/{audio_file.filename}"
+            # Mengubah secara eksplisit ke float
+            'prediction': float(prediction_value)
         }
-        return jsonify(response)
+
+        # Menggunakan json.dumps untuk serialisasi string JSON langsung
+        return json.dumps(response_data)
 
     except Exception as e:
-        print(f"Error during prediction: {e}")
-        abort(500, description="An error occurred during prediction.")
-
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
