@@ -15,7 +15,6 @@ The script uses the following libraries:
 * `tensorflow`
 * `flask`
 * `json`
-* `Model`
 
 The TensorFlow Lite model used is loaded from the file `thrive_model.tflite`. The model is expected to be in the same directory as the script.
 
