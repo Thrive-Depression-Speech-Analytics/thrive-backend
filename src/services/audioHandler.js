@@ -14,9 +14,9 @@ const { Readable } = require("stream");
 
 // Constants
 const storage = new Storage();
-const bucketName = "thrive-audio-storage"; // Replace with your GCS bucket name
+const bucketName = "thrive-audio-storage";
 const mlModelEndpoint =
-	"https://thrive-audio-model-5pilppfsoq-et.a.run.app/predict"; // Replace with your ML model API endpoint
+	"https://thrive-audio-model-5pilppfsoq-et.a.run.app/predict";
 
 /**
  * Object storing cached suggestions for quick access.
