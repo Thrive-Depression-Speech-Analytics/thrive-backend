@@ -1,6 +1,6 @@
 /**
- *  @fileOverview  Penanganan Audio -  API endpoint untuk menganalisis file audio 
- *  untuk mendeteksi potensi depresi, menyimpan hasil ke Firestore, 
+ *  @fileOverview  Penanganan Audio -  API endpoint untuk menganalisis file audio
+ *  untuk mendeteksi potensi depresi, menyimpan hasil ke Firestore,
  *  dan memberikan saran yang dipersonalisasi.
  */
 const fs = require("fs");
@@ -9,12 +9,18 @@ const formidable = require("formidable");
 const firebase = require("../server/firebase");
 const { Storage } = require("@google-cloud/storage");
 const axios = require("axios");
+const Joi = require("joi"); // For input validation
+const authService = require("../auth/authService");
+const { fetchUserHistory } = require("../services/historyUser");
+const axios = require("axios");
+const { pipeline } = require("stream/promises");
+const { Readable } = require("stream");
 
 // Constants
 const storage = new Storage();
-const bucketName = "your-bucket-name"; // Ganti dengan nama bucket GCS kamu
+const bucketName = "thrive-audio-storage"; // Ganti dengan nama bucket GCS kamu
 const allowedFormats = ["audio/mpeg", "audio/wav", "audio/ogg", "audio/aac"];
-const mlModelEndpoint = "https://your-ml-model-api-endpoint"; // Ganti dengan endpoint API model ML kamu
+const mlModelEndpoint = "https://thrive-audio-model-5pilppfsoq-et.a.run.app/predict"; // Ganti dengan endpoint API model ML kamu
 
 /**
  *  @constant {Object} cachedSuggestions - Objek yang menyimpan saran yang di-cache
@@ -29,7 +35,7 @@ const cachedSuggestions = {
     "Gabung komunitas online atau grup support untuk depresi. Sharing pengalaman bisa bikin kamu merasa lebih tenang.",
     "Coba bikin daftar hal-hal yang kamu suka, dan mulai lakukan! Ngejar hobi bisa bikin kamu lebih bahagia.",
     "Kalo kamu lagi minum obat, jangan lupa ikuti petunjuk dokter dan jangan berhenti minum obat tanpa konsultasi dulu.",
-    "Coba latihan relaksasi seperti pernapasan dalam atau meditasi untuk mengurangi stres."
+    "Coba latihan relaksasi seperti pernapasan dalam atau meditasi untuk mengurangi stres.",
   ],
   notDepressedSuggestions: [
     "Senang banget dengar kamu sehat-sehat aja! Tetap jaga kesehatan mentalmu ya. Perhatikan pola tidur, makan, dan aktivitasmu.",
@@ -38,7 +44,7 @@ const cachedSuggestions = {
     "Habiskan waktu bareng orang-orang yang sayang sama kamu. Jaga hubungan sosial yang sehat. Aku yakin kamu punya banyak temen yang sayang sama kamu.",
     "Hindari alkohol dan narkoba. Itu bisa bikin kondisi mental kamu makin buruk. Hampirilah orang yang kamu sayang kalau kamu butuh ngobrol atau curhat.",
     "Luangkan waktu untuk menikmati alam terbuka. Sinar matahari bisa bikin suasana hati lebih baik. Kita bisa jalan-jalan bareng ke taman, gimana?",
-    "Kalo kamu merasa cemas atau stres, coba teknik manajemen stres seperti yoga atau meditasi."
+    "Kalo kamu merasa cemas atau stres, coba teknik manajemen stres seperti yoga atau meditasi.",
   ],
 };
 
@@ -128,18 +134,22 @@ async function processAudioUpload(request) {
  *  @description  Menganalisis file audio menggunakan model ML.
  *  @param  {string} audioFilePath - Path ke file audio di sistem lokal.
  *  @param  {string} fileName - Nama file audio.
- *  @returns {Promise<boolean>} Promise yang menyelesaikan dengan hasil analisis 
+ *  @returns {Promise<boolean>} Promise yang menyelesaikan dengan hasil analisis
  *  (true jika terindikasi depresi, false jika tidak).
  */
 const analyzeAudio = async (audioFilePath, fileName) => {
   try {
-    // Upload audio to GCS before analysis
     const gcsUrl = await uploadAudioToGCS(audioFilePath, fileName);
+
+    const form = new FormData();
+    form.append("audio", fs.createReadStream(audioFilePath), {
+      filename: fileName,
+      contentType: "audio/wav",
+    });
 
     const response = await fetch(mlModelEndpoint, {
       method: "POST",
-      body: fs.readFileSync(audioFilePath), //  Retrieve audio data from GCS using gcsUrl
-      headers: { "Content-Type": "audio/wav" },
+      body: form,
     });
 
     if (!response.ok) {
@@ -173,10 +183,10 @@ const analyzeAudio = async (audioFilePath, fileName) => {
  *  @function  storeAnalysisResults
  *  @description  Menyimpan hasil analisis ke Firestore database.
  *  @param  {string} userId - ID pengguna.
- *  @param  {boolean} analysisResult - Hasil analisis (true jika terindikasi 
+ *  @param  {boolean} analysisResult - Hasil analisis (true jika terindikasi
  *  depresi, false jika tidak).
  *  @param  {string} audioFileName - Nama file audio.
- *  @returns {Promise<string>} Promise yang menyelesaikan dengan ID dokumen 
+ *  @returns {Promise<string>} Promise yang menyelesaikan dengan ID dokumen
  *  hasil analisis di Firestore.
  */
 const storeAnalysisResults = async (userId, analysisResult, audioFileName) => {
@@ -202,65 +212,88 @@ const storeAnalysisResults = async (userId, analysisResult, audioFileName) => {
 /**
  *  @function  generateSuggestions
  *  @description  Memilih saran yang sesuai berdasarkan hasil analisis.
- *  @param  {boolean} isDepressed - Hasil analisis (true jika terindikasi 
+ *  @param  {boolean} isDepressed - Hasil analisis (true jika terindikasi
  *  depresi, false jika tidak).
  *  @returns {string}  Saran acak yang sesuai.
  */
 async function generateSuggestions(isDepressed) {
-  const suggestions = isDepressed 
-    ? cachedSuggestions.depressedSuggestions
-    : cachedSuggestions.notDepressedSuggestions;
-  
+  const suggestions = isDepressed ? cachedSuggestions.depressedSuggestions : cachedSuggestions.notDepressedSuggestions;
+
   const randomIndex = Math.floor(Math.random() * suggestions.length);
-  return suggestions[randomIndex]; 
+  return suggestions[randomIndex];
 }
 
 //  Controller Function
 /**
- *  @constant {object} audioControllers - Objek yang berisi controller untuk 
+ *  @constant {object} audioControllers - Objek yang berisi controller untuk
  *  menangani permintaan analisis audio.
  */
 const audioControllers = {
   analyzeHandler: async (request, h) => {
     try {
       const userId = request.auth.credentials.userId;
-      const audioFile = await processAudioUpload(request);
-      
-      //  Validation and Error Handling
-      if (!isAllowedAudioFormat(audioFile.mimetype)) {
-        await deleteAudioFile(audioFile.filepath);
-        throw new Error("Format audio yang diupload tidak didukung.");
+      const audioFile = request.payload.audio;
+      if (!audioFile) {
+        return h.response({ error: "No audio file provided" }).code(400);
       }
+      const formData = new FormData();
+
+      // Get the content type (using file-type for more reliable detection)
+      // Dynamically import file-type
+      // Dynamically import file-type and use fileTypeFromBuffer
+      const fileType = await import("file-type");
+      const firstChunk = audioFile._data.slice(0, 4100);
+      const fileTypeInfo = await fileType.fileTypeFromBuffer(firstChunk);
+      const contentType = fileTypeInfo ? fileTypeInfo.mime : "application/octet-stream";
+
+      // Create a passthrough stream from the file's _data stream
+      const passThroughStream = new Readable();
+      passThroughStream.push(audioFile._data);
+      passThroughStream.push(null); // signal the end of the stream
+      // Convert stream to buffer using pipeline
+      const chunks = [];
+      await pipeline(passThroughStream, async function* (source) {
+        for await (const chunk of source) {
+          chunks.push(chunk);
+        }
+      });
+      const audioBuffer = Buffer.concat(chunks);
+
+      const blob = new Blob([audioBuffer], { type: contentType });
+      formData.append("audio", blob, audioFile.filename);
+
+      const response = await axios.post(ML_ENDPOINT_URL, formData, {
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${formData._boundary}`,
+        },
+      });
+      const prediction = response.data;
 
       //  Analyze audio and handle response
       const isDepressed = await analyzeAudio(audioFile.filepath, audioFile.originalFilename);
 
       //  Store results in database
-      const analysisId = await storeAnalysisResults(
-        userId,
-        isDepressed,
-        audioFile.originalFilename,
-      );
+      const analysisId = await storeAnalysisResults(userId, isDepressed, audioFile.originalFilename);
 
       return h
         .response({
           message: "Analisis selesai!",
-          isDepressed,
+          isDepressed: prediction.result,
+          confidence: prediction.prediction,
           suggestions: generateSuggestions(isDepressed),
           analysisId,
         })
         .code(200);
     } catch (error) {
-      console.error("Kesalahan analisis:", error);
+      console.error("Error processing audio:", error);
 
-      if (audioFile && audioFile.filepath) {
-        await deleteAudioFile(audioFile.filepath);
-        await deleteAudioFromGCS(audioFile.originalFilename);
+      if (error.response && error.response.status) {
+        // Handle specific errors from the ML endpoint (if available)
+        return h.response({ error: error.response.data }).code(error.response.status);
+      } else {
+        // Generic error handling
+        return h.response({ error: "Internal server error" }).code(500);
       }
-
-      return h
-        .response({ message: "Ada kesalahan internal. Coba lagi nanti." })
-        .code(500);
     }
   },
 };
