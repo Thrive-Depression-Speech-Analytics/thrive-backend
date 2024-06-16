@@ -2,7 +2,7 @@
 
 This repository contains the backend code for Thrive, a platform that utilizes audio analysis to empower individuals to proactively manage their mental well-being.
 
-### Project Structure
+## Project Structure
 
 - **auth:** 
     - `authService.js`: Handles user authentication, signup, login, password reset, and other user management functionalities.
@@ -16,7 +16,7 @@ This repository contains the backend code for Thrive, a platform that utilizes a
 - **app.py:** 
     - `app.py`:  Flask API endpoint for audio analysis (ML model deployment).
 
-### Technologies Used
+## Technologies Used
 
 - **Hapi.js:** Web framework for building the API server.
 - **Firebase:** Provides a NoSQL database (Firestore) and authentication services.
@@ -25,17 +25,18 @@ This repository contains the backend code for Thrive, a platform that utilizes a
 - **Librosa:** Python library for audio analysis and feature extraction.
 - **TensorFlow Lite:** Machine learning model for depression detection.
 
-### Key Features
+## Key Features
 
 - **User Authentication:** Secure signup, login, password reset, and logout functionalities.
 - **Audio Analysis:**  Uses a machine learning model to analyze audio recordings and predict potential depression.
 - **Personalized Suggestions:** Provides tailored suggestions for self-care and potential resources based on the analysis.
 - **History Tracking:**  Allows users to track their past analysis results and progress.
 
-### GCP Architecture
+## GCP Architecture
+![GCP architecture](https://github.com/Thrive-Depression-Speech-Analytics/thrive-backend/blob/main/thriveGCP.png)
 
 
-### Installation and Setup
+## Installation and Setup
 
 1. **Clone the repository:**
    ```bash
@@ -62,7 +63,7 @@ This repository contains the backend code for Thrive, a platform that utilizes a
    npm start
    ```
 
-### Running the App.py for ML Model
+## Running the App.py for ML Model
 
 1. Make sure you have `TensorFlow Lite` and `librosa` installed:
    ```bash
@@ -75,7 +76,7 @@ This repository contains the backend code for Thrive, a platform that utilizes a
    flask run 
    ```
 
-### API Endpoint Documentation
+## API Endpoint Documentation
 
 #### Authentication
 
@@ -290,5 +291,5 @@ This repository contains the backend code for Thrive, a platform that utilizes a
     * **500:** Internal server error.
 
 
-### Contributors
+## Contributors
 
