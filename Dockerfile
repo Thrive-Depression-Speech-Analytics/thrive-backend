@@ -1,21 +1,19 @@
-# Use an official Node.js runtime as a parent image
-FROM node:latest
+# Use a Node.js base image
+FROM node:22.2.0
 
-# Set the working directory to /app
-WORKDIR /app
+WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json to the working directory
+# Copy only package*.json first for efficient caching
 COPY package*.json ./
 
-# Install any needed packages
-RUN npm i
+# Install dependencies - bcrypt will be built here
+RUN npm install 
 
-# Copy the rest of the application to the working directory
-COPY . .
+# Copy the rest of your app code 
+COPY . . 
 
-ENV PORT 8080
-ENV HOST 0.0.0.0
+# Expose the port your app listens on
 EXPOSE 8080
 
-# Define the command to run your app
-CMD [ "npm", "run", "start" ]
+# Start the application
+CMD ["npm", "start"] 

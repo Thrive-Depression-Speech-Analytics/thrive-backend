@@ -1,4 +1,3 @@
-// src/config/firebase.js
 
 const firebase = require("firebase-admin");
 require("dotenv").config();

@@ -3,9 +3,8 @@ const authService = require("../auth/authService");
 const { fetchUserHistory } = require("../services/historyUser");
 const audioControllers = require("../services/audioHandler");
 
-// --- Input Validation Schemas ---
-// (You can add more validation rules as needed)
 
+// --- Input Validation Schemas ---
 const signupSchema = Joi.object({
 	username: Joi.string().alphanum().min(3).max(30).required(),
 	password: Joi.string().min(8).required(),
@@ -36,6 +35,8 @@ const changePasswordSchema = Joi.object({
 	newPassword: Joi.string().min(8).required(),
 });
 
+
+
 const routes = [
 	// --- Authentication Routes ---
 	{
@@ -44,7 +45,7 @@ const routes = [
 		options: {
 			auth: false,
 			validate: {
-				payload: signupSchema, // Apply validation schema
+				payload: signupSchema,
 			},
 		},
 		handler: authService.signupHandler,
@@ -120,19 +121,26 @@ const routes = [
 	},
 
 	// --- Audio Analysis Route ---
+
 	{
 		method: "POST",
 		path: "/audio/analyze",
 		options: {
 			auth: "jwt",
 			payload: {
-				output: "stream",
+				output: "stream", // Handle file uploads as streams
 				parse: true,
 				allow: "multipart/form-data",
-				maxBytes: 10 * 1024 * 1024,
+				multipart: true,
+				maxBytes: 20 * 1024 * 1024,
 			},
-			// You might add validation for audio file types here
+			validate: {
+				payload: Joi.object({
+					audio: Joi.any().meta({ swaggerType: "file" }), 
+				}).label("AudioPredictionPayload"),
+			},
 		},
+
 		handler: audioControllers.analyzeHandler,
 	},
 ];

@@ -16,7 +16,7 @@ const fetchUserHistory = async (request, h) => {
 		const analysisResultsSnapshot = await userRef
 			.collection("analysisResults")
 			.orderBy("timestamp", "desc")
-			.get(); // Order by timestamp for chronological order
+			.get(); 
 
 		const history = analysisResultsSnapshot.docs.map(doc => ({
 			id: doc.id,
@@ -26,7 +26,7 @@ const fetchUserHistory = async (request, h) => {
 		return h.response(history).code(200);
 	} catch (error) {
 		console.error("Error fetching analysis history:", error);
-		throw Boom.badImplementation("Failed to fetch analysis history"); // More specific error message
+		throw Boom.badImplementation("Failed to fetch analysis history"); 
 	}
 };
 

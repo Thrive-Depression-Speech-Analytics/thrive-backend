@@ -1,0 +1,6 @@
+tensorflow
+librosa 
+soundfile
+flask
+google-cloud-storage
+gunicorn

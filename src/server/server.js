@@ -7,11 +7,11 @@ require("dotenv").config();
 
 const init = async () => {
 	const server = Hapi.server({
-		port: process.env.PORT || 8080, // Use the port Cloud Run provides
-		host: "0.0.0.0", // Listen on all interfaces in Cloud Run
+		port: process.env.PORT || 8080, 
+		host: "localhost", 
 		routes: {
 			cors: {
-				origin: ["*"], //  Permissive for now, restrict in production
+				origin: ["*"], 
 				headers: ["Authorization", "Content-Type"],
 				credentials: true,
 			},
@@ -24,6 +24,8 @@ const init = async () => {
 			},
 		},
 	});
+
+
 
 	await server.register(Jwt);
 
@@ -49,7 +51,7 @@ const init = async () => {
 					return { isValid: false };
 				}
 
-				// It's usually recommended to attach the userId to credentials
+				
 				return {
 					isValid: true,
 					credentials: { userId },
@@ -63,7 +65,9 @@ const init = async () => {
 
 	server.route(authRoutes);
 
-	await server.start();
+	await server.start().then(() => {
+		console.log("Registered plugins:", server.registrations); 
+	});
 	console.log("Server running on %s", server.info.uri);
 };
 
