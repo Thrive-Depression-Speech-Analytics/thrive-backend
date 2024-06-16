@@ -292,4 +292,7 @@ This repository contains the backend code for Thrive, a platform that utilizes a
 
 
 ## Contributors
-
+| Name | Bangkit ID | Learning Path | University | Role |
+| :---: | :---: | :---: | :---: | :---: |
+| Muhammad Ridzki Nugraha | C193D4KY1133   | Cloud Computing | Universitas Bina Sarana Informatika | Backend Engineer, DevOps, Cloud Engineer |
+| Hari Handika Saputra | C193D4KY1176   | Cloud Computing | Universitas Bina Sarana Informatika | Backend Engineer, DevOps, Cloud Engineer |
