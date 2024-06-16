@@ -72,7 +72,7 @@ def predict():
         prediction = interpreter.get_tensor(output_details[0]['index'])[0]
 
         # 6. Interpretasi dan Penyiapan Hasil
-        threshold = 0.5  # Sesuaikan ambang batas sesuai kebutuhan
+        threshold = 0.5  
 
         # Memastikan prediksi berada dalam rentang probabilitas yang valid
         prediction_value = max(0, min(1, prediction))
