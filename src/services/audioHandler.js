@@ -14,9 +14,9 @@ const { Readable } = require("stream");
 
 // Constants
 const storage = new Storage();
-const bucketName = "thrive-audio-storage";
+const bucketName = "cloud-storage-thrive";
 const mlModelEndpoint =
-	"https://thrive-audio-model-5pilppfsoq-et.a.run.app/predict";
+	"ml-endpoint";
 
 /**
  * Object storing cached suggestions for quick access.
