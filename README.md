@@ -36,7 +36,7 @@ This repository contains the backend code for Thrive, a platform that utilizes a
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/thrive-backend.git
+   git clone https://github.com/Thrive-Depression-Speech-Analytics/thrive-backend.git
    ```
 2. **Install dependencies:**
    ```bash
