@@ -32,6 +32,9 @@ This repository contains the backend code for Thrive, a platform that utilizes a
 - **Personalized Suggestions:** Provides tailored suggestions for self-care and potential resources based on the analysis.
 - **History Tracking:**  Allows users to track their past analysis results and progress.
 
+### GCP Architecture
+
+
 ### Installation and Setup
 
 1. **Clone the repository:**
