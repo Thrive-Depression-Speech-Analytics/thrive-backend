@@ -9,10 +9,10 @@ COPY package*.json ./
 # Install dependencies - bcrypt will be built here
 RUN npm install 
 
-# Copy the rest of your app code 
+# Copy the rest of the app code 
 COPY . . 
 
-# Expose the port your app listens on
+# Expose the port 
 EXPOSE 8080
 
 # Start the application
